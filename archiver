@@ -1,0 +1,49 @@
+#!/usr/bin/env ruby
+
+require 'uri'
+require 'securerandom'
+
+CHROME_BIN = ENV['CHROME_BIN']
+
+URL_SEARCH_PATTERN = %r{https?://(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*)}.freeze
+
+def normalize_hostname(hostname)
+  hostname.start_with?('www.') ? hostname[4..] : hostname
+end
+
+def file_stem(filename)
+  File.basename(filename, File.extname(filename))
+end
+
+def main
+  search_root_dir = File.realpath(ARGV[0] || Dir.pwd)
+  puts "Search directory #{search_root_dir}"
+
+  found_url_results = `rg -i --with-filename -o '#{URL_SEARCH_PATTERN}' \
+        --type=md --type=txt #{search_root_dir}`
+
+  found_url_results.each_line do |line|
+    line.chomp!
+    file, url = line.split(':', 2)
+    file_resolved = File.realpath(file)
+    parsed_url = URI.parse(url)
+    parsed_url.fragment = nil # Remove fragment in URL
+    case normalize_hostname(parsed_url.host)
+    when 'github.com'
+      # TODO
+    else
+      output_dir = File.dirname(file_resolved)
+      output_file_stem = file_stem(parsed_url.path)
+      output_file = "#{output_file_stem.empty? ? SecureRandom.uuid : output_file_stem}.pdf"
+      output_path = File.join(output_dir, output_file)
+      Thread.new do
+        puts "Downloading: #{parsed_url}"
+        `'#{CHROME_BIN}' --headless --print-to-pdf=#{output_path} #{parsed_url}`
+      end
+    end
+  ensure
+    sleep(1)
+  end
+end
+
+main if __FILE__ == $PROGRAM_NAME
