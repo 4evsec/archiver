@@ -1,7 +1,13 @@
 #!/usr/bin/env ruby
+#
+################################################################################
+# A script that parses user's notes and backups web pages, blog articles and
+# tools.
+################################################################################
 
 require 'uri'
 require 'securerandom'
+require 'shellwords'
 
 CHROME_BIN = ENV['CHROME_BIN']
 
@@ -24,17 +30,17 @@ end
 
 def main
   search_root_dir = File.realpath(ARGV[0] || Dir.pwd)
-  puts "Search directory #{search_root_dir}"
+  puts "Search directory: #{search_root_dir}"
 
   found_url_results = `rg -i --with-filename -o '#{URL_SEARCH_PATTERN}' \
-        --type=md --type=txt #{search_root_dir}`
+        --type=md --type=txt '#{Shellwords.escape(search_root_dir)}'`
 
   tasks = []
   found_url_results.each_line do |line|
     line.chomp!
     file, url = line.split(':', 2)
-    file_resolved = File.realpath(file)
 
+    file_resolved = File.realpath(file)
     parsed_url = URI.parse(url)
     parsed_url.fragment = nil # Remove fragment in URL
 
@@ -46,7 +52,9 @@ def main
       output_path = File.join(output_dir, output_file(parsed_url.path))
       tasks << Thread.new do
         puts "Downloading: #{parsed_url}"
-        `'#{CHROME_BIN}' --headless --print-to-pdf=#{output_path} #{parsed_url}`
+        `'#{CHROME_BIN}' --headless \
+        --print-to-pdf='#{Shellwords.escape(output_path)}' \
+        '#{Shellwords.escape(parsed_url)}'`
       end
     end
   ensure
