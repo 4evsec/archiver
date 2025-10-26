@@ -7,7 +7,6 @@
 
 require 'uri'
 require 'securerandom'
-require 'shellwords'
 
 CHROME_BIN = ENV['CHROME_BIN']
 
@@ -18,14 +17,18 @@ def normalize_hostname(hostname)
   hostname.start_with?('www.') ? hostname[4..] : hostname
 end
 
-def file_stem(filename)
-  File.basename(filename, File.extname(filename))
+def output_file(uri)
+  uri.fragment = nil
+  output_file_stem = File.basename(uri.path, File.extname(uri.path))
+  output_file_stem.chomp!('/')
+  output_file_stem = SecureRandom.uuid if output_file_stem.empty?
+  "#{output_file_stem}.pdf"
 end
 
-def output_file(url_path)
-  output_file_stem = file_stem(url_path)
-  output_file_stem.chomp!('/')
-  "#{output_file_stem.empty? ? SecureRandom.uuid : output_file_stem}.pdf"
+def download_file(url, output_path)
+  puts "Downloading: #{url}"
+  system(CHROME_BIN, '--headless', "--print-to-pdf=#{output_path}",
+         url)
 end
 
 def main
@@ -33,7 +36,7 @@ def main
   puts "Search directory: #{search_root_dir}"
 
   found_url_results = `rg -i --with-filename -o '#{URL_SEARCH_PATTERN}' \
-        --type=md --type=txt '#{Shellwords.escape(search_root_dir)}'`
+        --type=md --type=txt '#{search_root_dir}'`
 
   tasks = []
   found_url_results.each_line do |line|
@@ -41,20 +44,16 @@ def main
     file, url = line.split(':', 2)
 
     file_resolved = File.realpath(file)
-    parsed_url = URI.parse(url)
-    parsed_url.fragment = nil # Remove fragment in URL
+    uri = URI.parse(url)
 
-    case normalize_hostname(parsed_url.host)
+    case normalize_hostname(uri.host)
     when 'github.com'
       # TODO
     else
       output_dir = File.dirname(file_resolved)
-      output_path = File.join(output_dir, output_file(parsed_url.path))
+      output_path = File.join(output_dir, output_file(uri))
       tasks << Thread.new do
-        puts "Downloading: #{parsed_url}"
-        `'#{CHROME_BIN}' --headless \
-        --print-to-pdf='#{Shellwords.escape(output_path)}' \
-        '#{Shellwords.escape(parsed_url)}'`
+        download_file(uri, output_path)
       end
     end
   ensure
